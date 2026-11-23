@@ -1,128 +1,182 @@
-"""Draw the 23 November 2026 one-day news image (1024x1024 PNG).
+#!/usr/bin/env python3
+"""Draw the one-day news infographic for Monday, 23 November 2026.
 
-Session tooling: run it once with `python3 draw.py` and it writes
-entry.png beside this file. The entry program (main.ts) only copies
-that PNG to the output directory, so two runs write identical bytes.
+Pillow-only, no network, no clock: the same script always renders the
+same 1024x1024 PNG. Run with `python3 draw.py`; the output is entry.png
+next to this file.
 """
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
-NAVY = (11, 18, 38)
-PANEL = (22, 33, 58)
-GOLD = (212, 175, 105)
-WHITE = (245, 247, 250)
-MUTED = (199, 208, 224)
-FAINT = (148, 163, 184)
-RED = (224, 82, 82)
-
+W = H = 1024
+MARGIN = 46
 FONT_DIR = "/usr/share/fonts/truetype/dejavu/"
-BOLD = FONT_DIR + "DejaVuSans-Bold.ttf"
-REG = FONT_DIR + "DejaVuSans.ttf"
+
+BG = (11, 16, 38)
+CARD = (20, 27, 51)
+WHITE = (255, 255, 255)
+GREY = (205, 211, 224)
+MUTED = (148, 156, 178)
+GOLD = (212, 175, 105)
+RED = (226, 88, 88)
+BLUE = (96, 165, 250)
+GREEN = (52, 199, 123)
+AMBER = (245, 178, 66)
+PURPLE = (178, 120, 235)
+TEAL = (45, 196, 178)
 
 
-def font(path, size):
-    return ImageFont.truetype(path, size)
+def font(name, size):
+    return ImageFont.truetype(FONT_DIR + name, size)
 
 
-def wrap(draw, text, fnt, width):
-    """Split text into lines that fit `width` pixels."""
-    lines, line = [], ""
+def wrap(draw, text, fnt, max_w):
+    """Greedy word wrap returning a list of lines that fit max_w pixels."""
+    lines, cur = [], ""
     for word in text.split():
-        trial = (line + " " + word).strip()
-        if draw.textlength(trial, font=fnt) <= width:
-            line = trial
+        trial = word if not cur else cur + " " + word
+        if draw.textlength(trial, font=fnt) <= max_w:
+            cur = trial
         else:
-            if line:
-                lines.append(line)
-            line = word
-    if line:
-        lines.append(line)
+            if cur:
+                lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
     return lines
 
 
-def draw():
-    img = Image.new("RGB", (W, H), NAVY)
+def draw_tracked(draw, x, y, text, fnt, fill, tracking):
+    """Draw text with extra space between characters."""
+    for ch in text:
+        draw.text((x, y), ch, font=fnt, fill=fill)
+        x += draw.textlength(ch, font=fnt) + tracking
+    return x
+
+
+def card(draw, x, y, w, h, radius=14):
+    draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=CARD)
+
+
+def story_card(draw, y, tag, tag_color, headline, summary):
+    """One secondary story card; returns the y just below it."""
+    x = MARGIN
+    w = W - 2 * MARGIN
+    inner = x + 16
+    head_f = font("DejaVuSans-Bold.ttf", 26)
+    body_f = font("DejaVuSans.ttf", 21)
+    max_w = w - 32
+
+    # Tag pill width decides how much room the headline gets.
+    pill_w = draw.textlength(tag, font=head_f) + 24
+    head_lines = wrap(draw, headline, head_f, max_w - pill_w - 12)
+    body_lines = wrap(draw, summary, body_f, max_w)
+    h = 8 + 30 + len(head_lines) * 30 + len(body_lines) * 23 + 6
+    card(draw, x, y, w, h)
+
+    # Tag pill.
+    pill_y = y + 8
+    draw.rounded_rectangle(
+        [inner, pill_y, inner + pill_w, pill_y + 30], radius=8, fill=tag_color
+    )
+    draw.text((inner + 12, pill_y + 3), tag, font=head_f, fill=WHITE)
+
+    # Headline to the right of the pill.
+    hx = inner + pill_w + 12
+    hy = y + 11
+    for line in head_lines:
+        draw.text((hx, hy), line, font=head_f, fill=WHITE)
+        hy += 30
+
+    # Summary underneath, full width.
+    by = y + 8 + 30 + len(head_lines) * 30
+    for line in body_lines:
+        draw.text((inner, by), line, font=body_f, fill=GREY)
+        by += 23
+    return y + h + 6
+
+
+def main():
+    img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    x = 46
-    content_w = W - 2 * x
 
-    # Header: kicker, date, gold rule.
-    d.text((x, 36), "O N E   D A Y   I N   T H E   W O R L D",
-           font=font(BOLD, 26), fill=GOLD)
-    d.text((x, 74), "MONDAY, 23 NOVEMBER 2026",
-           font=font(BOLD, 50), fill=WHITE)
-    d.rectangle([x, 146, W - x, 150], fill=GOLD)
+    # Masthead.
+    kicker_f = font("DejaVuSans-Bold.ttf", 26)
+    # Shrink the date until it fits between the margins.
+    date_size = 60
+    while True:
+        date_f = font("DejaVuSans-Bold.ttf", date_size)
+        if d.textlength("MONDAY, 23 NOVEMBER 2026", font=date_f) <= W - 2 * MARGIN:
+            break
+        date_size -= 1
+    draw_tracked(d, MARGIN, 34, "ONE DAY IN THE WORLD", kicker_f, GOLD, 6)
+    d.text((MARGIN, 68), "MONDAY, 23 NOVEMBER 2026", font=date_f, fill=WHITE)
+    d.rectangle([MARGIN, 138, W - MARGIN, 142], fill=GOLD)
 
-    # Lead story: COP31 climate talks fail.
-    lead_top, lead_h = 168, 200
-    d.rounded_rectangle([x, lead_top, W - x, lead_top + lead_h],
-                        radius=14, fill=PANEL)
-    d.rectangle([x, lead_top + 10, x + 8, lead_top + lead_h - 10],
-                fill=RED)
-    lx = x + 26
-    d.text((lx, lead_top + 14), "CLIMATE  —  LEAD STORY",
-           font=font(BOLD, 21), fill=RED)
-    d.text((lx, lead_top + 44), "COP31 TALKS FAIL",
-           font=font(BOLD, 38), fill=WHITE)
-    d.text((lx, lead_top + 90), "NO FOSSIL-FUEL DEAL",
-           font=font(BOLD, 38), fill=WHITE)
-    lead_body = ("The Antalya summit ends with no agreement: the EU and "
-                 "others reject any deal without language on phasing out "
-                 "fossil fuels.")
-    for i, line in enumerate(wrap(d, lead_body, font(REG, 24), content_w - 52)):
-        d.text((lx, lead_top + 138 + i * 30), line,
-               font=font(REG, 24), fill=MUTED)
+    # Lead story card.
+    y = 152
+    w = W - 2 * MARGIN
+    lead_kicker_f = font("DejaVuSans-Bold.ttf", 24)
+    lead_head_f = font("DejaVuSans-Bold.ttf", 40)
+    lead_body_f = font("DejaVuSans.ttf", 23)
+    lead = (
+        "The Antalya summit ends with no agreement: the EU and others "
+        "reject any deal without language on phasing out fossil fuels."
+    )
+    lead_lines = wrap(d, lead, lead_body_f, w - 52)
+    lead_h = 12 + 28 + 2 * 48 + len(lead_lines) * 28 + 12
+    card(d, MARGIN, y, w, lead_h)
+    d.rectangle([MARGIN, y + 8, MARGIN + 8, y + lead_h - 8], fill=RED)
+    d.text((MARGIN + 26, y + 14), "CLIMATE  —  LEAD STORY",
+           font=lead_kicker_f, fill=RED)
+    d.text((MARGIN + 26, y + 46), "COP31 TALKS FAIL",
+           font=lead_head_f, fill=WHITE)
+    d.text((MARGIN + 26, y + 94), "NO FOSSIL-FUEL DEAL",
+           font=lead_head_f, fill=WHITE)
+    by = y + 46 + 2 * 48
+    for line in lead_lines:
+        d.text((MARGIN + 26, by), line, font=lead_body_f, fill=GREY)
+        by += 28
 
-    # Five more stories, one row each: tag chip + headline on the
-    # first line, the summary wrapped over the next two lines.
-    rows = [
-        ("LIBYA", (70, 130, 200),
-         "Sea drones hit Russian warship at Benghazi",
-         "Suspected Ukrainian sea drones strike a Russian warship at "
-         "the Benghazi naval base; at least 10 injured."),
-        ("GULF", (46, 160, 110),
-         "US-Iran war widens across the Gulf",
-         "Houthis claim strikes on a Saudi oil refinery; an Iranian "
-         "strike wounds two in Bahrain."),
-        ("UKRAINE", (180, 130, 40),
-         "14 missing after drone hits Kyiv-region block",
-         "A Russian drone hits a residential building in the Kyiv "
-         "region; a Russian cargo ship burns off Finland."),
-        ("S. KOREA", (150, 90, 180),
-         "Education minister quits in AI exam scandal",
-         "South Korea's education minister resigns over AI-driven "
-         "cheating in the university entrance exam."),
-        ("SPORT", (40, 150, 150),
-         "Liverpool rout United in Pochettino debut",
-         "Liverpool hammer ten-man Manchester United; India post a "
-         "record 720/9d in the Wellington Test."),
-    ]
-    row_top = 384
-    row_h, row_gap = 104, 12
-    for tag, colour, headline, body in rows:
-        d.rounded_rectangle([x, row_top, W - x, row_top + row_h],
-                            radius=12, fill=PANEL)
-        tag_fnt = font(BOLD, 19)
-        tw = d.textlength(tag, font=tag_fnt)
-        d.rounded_rectangle([x + 16, row_top + 14, x + 32 + tw, row_top + 44],
-                            radius=8, fill=colour)
-        d.text((x + 24, row_top + 18), tag, font=tag_fnt, fill=WHITE)
-        d.text((x + 44 + tw, row_top + 15), headline,
-               font=font(BOLD, 27), fill=WHITE)
-        for i, line in enumerate(wrap(d, body, font(REG, 22), content_w - 32)):
-            d.text((x + 16, row_top + 54 + i * 25), line,
-                   font=font(REG, 22), fill=MUTED)
-        row_top += row_h + row_gap
+    y = y + lead_h + 6
+    y = story_card(
+        d, y, "LIBYA", BLUE,
+        "Sea drones hit Russian warship at Benghazi",
+        "Suspected Ukrainian sea drones strike a Russian warship at the "
+        "Benghazi naval base; at least 10 injured.",
+    )
+    y = story_card(
+        d, y, "GULF", GREEN,
+        "US-Iran war widens across the Gulf",
+        "Houthis claim strikes on a Saudi oil refinery; an Iranian strike "
+        "wounds two in Bahrain.",
+    )
+    y = story_card(
+        d, y, "UKRAINE", AMBER,
+        "14 missing after drone hits Kyiv-region block",
+        "A Russian drone hits a residential building in the Kyiv region; a "
+        "Russian cargo ship burns off Finland.",
+    )
+    y = story_card(
+        d, y, "S. KOREA", PURPLE,
+        "Education minister quits in AI exam scandal",
+        "South Korea's education minister resigns over AI-driven cheating "
+        "in the university entrance exam.",
+    )
+    y = story_card(
+        d, y, "SPORT", TEAL,
+        "Liverpool rout United in Pochettino debut",
+        "Liverpool hammer ten-man Manchester United; India post a record "
+        "720/9d in the Wellington Test.",
+    )
 
-    # Footer: sources.
-    d.text((x, 968),
-           "Sources: Reuters \u00b7 AP \u00b7 AFP \u00b7 The Hindu",
-           font=font(REG, 19), fill=FAINT)
+    # Footer.
+    foot_f = font("DejaVuSans.ttf", 21)
+    d.text((MARGIN, H - 34), "Sources: Reuters · AP · AFP · The Hindu",
+           font=foot_f, fill=MUTED)
 
-    img.save("entry.png", format="PNG", optimize=True)
-    print("wrote entry.png")
+    img.save("entry.png", optimize=True)
 
 
 if __name__ == "__main__":
-    draw()
+    main()
